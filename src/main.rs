@@ -9,10 +9,14 @@ fn get_input() -> u64 {
     dur.as_secs() * 1_000_000_000 + dur.subsec_nanos() as u64
 }
 
-const N_LOW_BITS: usize = 1 << 10;
+const LOW_BITS: usize = 10;
+const DIFF_BITS: usize = 10;
+const LOW_DIFF: usize = 1 << 5;
+
+const N_LOW_BITS: usize = 1 << LOW_BITS;
 const LOW_MASK: i64 = (N_LOW_BITS - 1) as i64;
 
-const MAX_DIFF: usize = 1 << 10;
+const MAX_DIFF: usize = 1 << DIFF_BITS;
 
 struct DataOut {
     low_bits: [u32; N_LOW_BITS],
@@ -69,10 +73,42 @@ fn main() {
     
     // looking at the low bits of the diff, there may be 2-4 bits of entropy,
     // but this is hard to estimate due to bias
-    const DIFF_BITS: usize = 1 << 5;
-    let mut low_diff = [0u32; DIFF_BITS];
+    let mut low_diff = [0u32; LOW_DIFF];
     for i in 0..MAX_DIFF {
-        low_diff[i & (DIFF_BITS - 1)] += data.diffs[i];
+        low_diff[i & (LOW_DIFF - 1)] += data.diffs[i];
     }
-    plot_hist(DIFF_BITS, low_diff.iter(), "low diff bits");
+    plot_hist(LOW_DIFF, low_diff.iter(), "low diff bits");
+    
+    let mut diff_bit_freq = [0u32; DIFF_BITS];
+    let mut total = 0;
+    for i in 0..MAX_DIFF {
+        let n = data.diffs[i];
+        if n > 0 {
+            for bit in 0..DIFF_BITS {
+                if (i >> bit) & 1 == 1 {
+                    diff_bit_freq[bit] += n;
+                }
+            }
+            total += n;
+        }
+    }
+    let mut diff_bit_p = [0.0f64; DIFF_BITS];
+    let mut diff_bit_entropy = [0.0f64; DIFF_BITS];
+    for bit in 0..DIFF_BITS {
+        let p = diff_bit_freq[bit] as f64 / total as f64;
+        
+        diff_bit_p[bit] = p;
+        diff_bit_entropy[bit] = if p == 0.0 || p == 1.0 {
+            0.0
+        } else { 
+            // Shannon entropy:
+            p * -p.log2() +
+            (1.0 - p) * -(1.0 - p).log2()
+        };
+    }
+    println!("low diff bits:");
+    println!("freq:\t{:?}", diff_bit_freq);
+    println!("p:\t{:?}", diff_bit_p);
+    println!("entropy:\t{:?}", diff_bit_entropy);
+    println!("Total entropy: {}", diff_bit_entropy.iter().sum::<f64>());
 }
